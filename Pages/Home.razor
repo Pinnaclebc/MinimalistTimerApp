@@ -1,0 +1,258 @@
+﻿@page "/"
+@using System.Timers
+@implements IDisposable
+
+<div class="timer-container">
+    @if (!isCountingDown)
+    {
+        <div class="clock-display">
+            <input type="text" maxlength="2" @bind="DisplayInputHours" placeholder="00" class="time-input"
+                   onclick="this.select()" oninput="this.value = this.value.replace(/[^0-9]/g, '');" />
+
+            <span class="colon">:</span>
+
+            <input type="text" maxlength="2" @bind="DisplayInputMinutes" placeholder="00" class="time-input"
+                   onclick="this.select()" oninput="this.value = this.value.replace(/[^0-9]/g, '');" />
+
+            <span class="colon">:</span>
+
+            <input type="text" maxlength="2" @bind="DisplayInputSeconds" placeholder="00" class="time-input"
+                   onclick="this.select()" oninput="this.value = this.value.replace(/[^0-9]/g, '');" />
+        </div>
+
+        <button class="control-btn" @onclick="StartTimer">START</button>
+    }
+    else
+    {
+        <div class="clock-display">
+            <div class="flip-container">
+                <div class="flip-number" @key="displayHours">@displayHours</div>
+            </div>
+            <span class="colon">:</span>
+
+            <div class="flip-container">
+                <div class="flip-number" @key="displayMinutes">@displayMinutes</div>
+            </div>
+            <span class="colon">:</span>
+
+            <div class="flip-container">
+                <div class="flip-number" @key="displaySeconds">@displaySeconds</div>
+            </div>
+        </div>
+
+        <button class="control-btn" @onclick="StopTimer">RESET</button>
+    }
+</div>
+
+@code {
+    // Input variables bound to the text fields
+    private int inputHours = 0;
+    private int inputMinutes = 0;
+    private int inputSeconds = 0;
+
+    // Smart string properties for the HTML inputs to bind to
+    private string DisplayInputHours
+    {
+        get => inputHours.ToString("D2"); // "D2" forces it to format as 2 digits (e.g., 01)
+        set => int.TryParse(value, out inputHours); // Converts user typing back into an int safely
+    }
+
+    private string DisplayInputMinutes
+    {
+        get => inputMinutes.ToString("D2");
+        set => int.TryParse(value, out inputMinutes);
+    }
+
+    private string DisplayInputSeconds
+    {
+        get => inputSeconds.ToString("D2");
+        set => int.TryParse(value, out inputSeconds);
+    }
+
+    // Total seconds remaining for the countdown logic
+    private int totalSecondsRemaining;
+    private bool isCountingDown = false;
+
+    // String representations used to trigger Blazor DOM updates for animations
+    private string displayHours = "00";
+    private string displayMinutes = "00";
+    private string displaySeconds = "00";
+
+    // System.Timers.Timer is excellent for precise background intervals
+    private Timer? itsTimer;
+
+    private void StartTimer()
+    {
+        // C# VALIDATION: Force numbers to stay within your limits if the user types them manually
+        if (inputHours > 24) inputHours = 24;
+        if (inputMinutes > 59) inputMinutes = 59;
+        if (inputSeconds > 59) inputSeconds = 59;
+
+        // Ensure no negative numbers are processed
+        if (inputHours < 0) inputHours = 0;
+        if (inputMinutes < 0) inputMinutes = 0;
+        if (inputSeconds < 0) inputSeconds = 0;
+
+        // Calculate the absolute total time in seconds
+        totalSecondsRemaining = (inputHours * 3600) + (inputMinutes * 60) + inputSeconds;
+
+        // Validation: Don't start if the user left everything at 00
+        if (totalSecondsRemaining <= 0) return;
+
+        UpdateDisplayStrings();
+        isCountingDown = true;
+
+        // Initialize the background timer to tick every 1000ms (1 second)
+        itsTimer = new Timer(1000);
+        itsTimer.Elapsed += OnTimerTick;
+        itsTimer.AutoReset = true;
+        itsTimer.Start();
+    }
+
+    private void OnTimerTick(object? sender, ElapsedEventArgs e)
+    {
+        if (totalSecondsRemaining > 0)
+        {
+            totalSecondsRemaining--;
+            UpdateDisplayStrings();
+
+            // CRITICAL: Since this runs on a background thread from the Timer,
+            // we must force Blazor to re-render the UI safely on the main thread.
+            InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            StopTimer();
+        }
+    }
+
+    private void UpdateDisplayStrings()
+    {
+        // Break total seconds back into HH:MM:SS format and pad with a leading zero
+        int h = totalSecondsRemaining / 3600;
+        int m = (totalSecondsRemaining % 3600) / 60;
+        int s = totalSecondsRemaining % 60;
+
+        displayHours = h.ToString("D2");
+        displayMinutes = m.ToString("D2");
+        displaySeconds = s.ToString("D2");
+    }
+
+    private void StopTimer()
+    {
+        if (itsTimer != null)
+        {
+            itsTimer.Stop();
+            itsTimer.Dispose();
+        }
+
+        // RESET LOGIC: Force all inputs and data variables back to absolute zero
+        inputHours = 0;
+        inputMinutes = 0;
+        inputSeconds = 0;
+
+        displayHours = "00";
+        displayMinutes = "00";
+        displaySeconds = "00";
+
+        isCountingDown = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Lifecycle method: Ensures memory is cleared if the user leaves the page
+    public void Dispose()
+    {
+        itsTimer?.Dispose();
+    }
+}
+
+<style>
+    /* Minimalist Dark Theme Settings */
+    .timer-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #000000;
+        color: #ffffff;
+        /* PLACEHOLDER FOR MINIMALIST FONT */
+        font-family: 'Courier New', Courier, monospace;
+    }
+
+    /* Keeps inputs and static text perfectly aligned in the exact same spot */
+    .clock-display {
+        display: flex;
+        align-items: center;
+        font-size: 5rem;
+        font-weight: 300;
+        margin-bottom: 2rem;
+    }
+
+    /* Style for the input fields to remove borders and make them look like text */
+    .time-input {
+        background: transparent;
+        border: none;
+        color: #ffffff;
+        width: 7rem;
+        text-align: center;
+        font-size: 5rem;
+        font-family: inherit;
+        outline: none;
+    }
+
+    /* Removes default browser arrows/spinners on number inputs */
+    .time-input::-webkit-outer-spin-button,
+    .time-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+
+    .colon {
+        padding-bottom: 1rem;
+    }
+
+    /* Minimalist Button Styling */
+    .control-btn {
+        background: transparent;
+        border: 1px solid #ffffff;
+        color: #ffffff;
+        padding: 0.5rem 2rem;
+        font-size: 1rem;
+        letter-spacing: 2px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+    }
+
+    .control-btn:hover {
+        background: #ffffff;
+        color: #000000;
+    }
+
+    /* SWIPE DOWN ANIMATION LOGIC
+       Using Blazor's @@key directive forces it to destroy and recreate the element 
+       whenever the value updates, triggering this CSS animation instantly. */
+    .flip-container {
+        display: inline-block;
+        overflow: hidden;
+        height: 6rem;
+        width: 7rem;
+        text-align: center;
+    }
+
+    .flip-number {
+        animation: swipeDown 0.25s ease-out forwards;
+    }
+
+    @@keyframes swipeDown {
+        0% {
+            transform: translateY(-50%);
+            opacity: 0;
+        }
+
+        100% {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+</style>
